@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: openkoda
+      POSTGRES_DB: openkoda
+    expose:
+      - 5432
+    volumes:
+      - db:/var/lib/postgresql/data
+  database_ui:
+    image: adminer
+    expose:
+      - 8080
+    depends_on:
+      - database
+  openkoda:
+    tty: true
+    build:
+      context: .
+      dockerfile: config/openkoda/Dockerfile
+    command: java -Dloader.path=/BOOT-INF/classes -Dsecure.cookie=false -jar openkoda/build/openkoda-1.4.1.jar --spring.profiles.active=openkoda --server.port=8030 --spring.datasource.username=postgres  --spring.datasource.password=openkoda --spring.datasource.url=jdbc:postgresql://database:5432/openkoda
+    expose:
+      - 8030
+    depends_on:
+      - database
+  nginx_reverse_proxy:
+    image: nginx
+    volumes:
+      - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./config/nginx/ssl/:/etc/nginx/ssl/:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - database_ui
+      - openkoda
+  cert_generator:
+    build:
+      dockerfile: ./config/cert_generator/Dockerfile
+    command: openssl req -x509 -newkey rsa:4096 -days 365 -nodes -subj "/C=FI/ST=Helsinki/L=Helsinki/O=Andy/OU=IT Department/CN=demo.test" -addext "subjectAltName=DNS:demo.test,DNS:*.demo.test" -keyout /etc/nginx/ssl/selfsigned.key -out /etc/nginx/ssl/selfsigned.crt
+    volumes:
+      - ./config/nginx/ssl/:/etc/nginx/ssl/:rw
+volumes:
+  db:
+    driver: local
